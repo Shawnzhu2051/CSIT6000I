@@ -1,4 +1,3 @@
-import numpy as np
 import re
 import nltk
 from nltk.corpus import stopwords
@@ -142,9 +141,6 @@ def generate_word_bag(processed_data):
                 word_bag[word].append(_index_in_word)
         document = Document(_index_in_line, word_bag)
         ret_document_list.append(document)
-    #for item in ret_document_list:
-    #    print(item.DID)
-    #    print(item.word_bag)
     return ret_document_list
 
 
@@ -170,13 +166,6 @@ def generate_inverted_file(document_list):
             else:
                 inverted_file[word[0]].df += len(word[1])
             inverted_file[word[0]].posting_dict[document.DID] = word[1]
-    '''
-    for item in inverted_file.items():
-        print(item)
-        print(item[1].df)
-        print(item[1].posting_dict)
-        print('----------')
-    '''
     return inverted_file
 
 
@@ -201,16 +190,8 @@ def query_retrieve(processed_query, inverted_file, document_list, total_sum):
                 if k not in candidate_list:
                     candidate_list.append(k)
         document_weight_vector = compute_weight_by_tfidf(query, inverted_file, document_list, candidate_list, total_sum)
-
         query_result_list = compute_all_similarity_result(query, document_weight_vector, candidate_list)
         query_result_list = sorted(query_result_list, key=lambda x: x.similarity_score, reverse=True)
-        '''
-        for item in query_result_list:
-            print(item.query)
-            print(item.DID)
-            print(item.similarity_score)
-            print('-----')
-        '''
         ret_result.append(query_result_list[:3])
     return ret_result
 
@@ -265,25 +246,28 @@ def compute_all_similarity_result(query, document_weight_vector, candidate_list)
         for num in weight_vector:
             mag_d += num ** 2
         mag_d = math.sqrt(mag_d)
-        mag_q = math.sqrt(len(query))
-        cosine_score = d_times_q/(mag_d * mag_q)
-        query_result = QueryResult(query, candidate_list[_index-1])
+        # mag_q = math.sqrt(len(query))
+        cosine_score = d_times_q  # /(mag_d * mag_q)
+        query_result = QueryResult(query, candidate_list[_index])
         query_result.similarity_score = cosine_score
         query_result.magnitude = mag_d
         query_result_list.append(query_result)
-        '''
-        print(query)
-        print(weight_vector)
-        print(d_times_q)
-        print(mag_d)
-        print(mag_q)
-        print(cosine_score)
-        print('-----')
-        '''
     return query_result_list
 
 
 def complete_result(retrieve_results, document_list, inverted_file, total_sum):
+    '''
+    Complete the result. Since the QueryResult instance still have several term uncompleted.
+    The five highest weighted keywords of the document and the posting lists is computed in compute_top5_keyword.
+    The number of unique keywords in the document is computed in compute_unique_num.
+    Args: 
+        retrieve_results: list, contains top three high similarity score results.
+        document_list: list, each element contains a Document instance 
+        inverted_file: list, used to compute tfidf for indexing the key words
+        total_sum: int, used to compute tfidf
+    Returns:
+        final_result: list, a list of completed QueryResult instance
+    '''
     final_result = []
     for query_result in retrieve_results:
         for _index, single_result in enumerate(query_result):
@@ -295,6 +279,16 @@ def complete_result(retrieve_results, document_list, inverted_file, total_sum):
 
 
 def compute_top5_keyword(DID, document_list, inverted_file, total_sum):
+    '''
+    Compute the top 5 keyword in one document based on the tfidf value
+    Args: 
+        DID: int, document ID
+        document_list: list, used to compute tf
+        inverted_file: list, used to compute df
+        total_sum: int, used to compute tfidf
+    Returns:
+        ret_result: list, contains top 5 keyword and its posting list
+    '''
     word_dict = {}
     ret_result = []
     document = document_list[DID]
@@ -311,6 +305,15 @@ def compute_top5_keyword(DID, document_list, inverted_file, total_sum):
 
 
 def compute_unique_num(DID, document_list, inverted_file):
+    '''
+    Find the number of unique word in one document
+    Args: 
+        DID: int, document ID
+        document_list: list, used to find document
+        inverted_file: list, used to find whether unique
+    Returns:
+        unique_num: int, the number of unique word
+    '''
     unique_num = 0
     document = document_list[DID]
     for word, _ in document.word_bag.items():
@@ -328,9 +331,6 @@ if __name__ == "__main__":
 
     document_list = generate_word_bag(processed_data)
     inverted_file = generate_inverted_file(document_list)
-    #for k, v in inverted_file.items():
-    #    print(k)
-    #    v.show_posting_dict()
 
     retrieve_results = query_retrieve(processed_query, inverted_file, document_list, total_sum)
 
