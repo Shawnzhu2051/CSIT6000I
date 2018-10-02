@@ -2,7 +2,7 @@ import numpy as np
 import re
 import nltk
 from nltk.corpus import stopwords
-
+import math
 
 class Document(object):
     '''
@@ -16,10 +16,6 @@ class Document(object):
     def __init__(self, DID, word_bag):
         self.DID = DID
         self.word_bag = word_bag
-
-    def show(self):
-        print(self.DID)
-        print(self.word_bag)
 
 
 class IndexTermPosting(object):
@@ -38,16 +34,28 @@ class QueryResult(object):
     Store the query retrieve result. One QueryResult store one document result.
     Attr:
         query: list, the query sentence which contains several query words
-        rank: the rank of query result, range from 0 to 2.
+        DID: int, indicate the corresponding DID
     '''
-    def __init__(self, query, rank):
+    def __init__(self, query, DID):
         self.query = query
-        self.rank = rank
-        self.DID = 0
-        self.keyword_list = []
-        self.unique_keyword_num = []
+        self.rank = 0
+        self.DID = DID
+        self.keyword_dict = {}
+        self.unique_keyword_num = 0
         self.magnitude = 0
         self.similarity_score = []
+
+    def show(self):
+        print('For query: ')
+        print(self.query)
+        print('The top ' + str(self.rank) + ' result is: ')
+        print('DID: ' + str(self.DID))
+        for k,v in self.keyword_dict.items():
+            print(str(k) + ' -> ' + str(v))
+        print('Number of unique keywords in document: ' + str(self.unique_keyword_num))
+        print('Magnitude of the document vector: ' + str(self.magnitude))
+        print('Similarity score: ' + str(self.similarity_score))
+        print('----------')
 
 
 def read_data(FILENAME):
@@ -163,46 +171,126 @@ def generate_inverted_file(document_list):
 
 def query_retrieve(processed_query, inverted_file, document_list, total_sum):
     '''
-        Do the retrieve function.
-        Args:
-            processed_query: list, each element contains a list of query words.
-            inverted_file: list, {index_item1: {df1, posting_dict1}
-                                index_item2: {df2, posting_dict2}
-                                index_item3: {df3, posting_dict3}}
-            document_list: list, each element contains a Document instance 
-            total_sum: the total number of all the words
-        Returns: 
-            
-        '''
+    Do the retrieve function.
+    Args:
+        processed_query: list, each element contains a list of query words.
+        inverted_file: list, {index_item1: {df1, posting_dict1}
+                            index_item2: {df2, posting_dict2}
+                            index_item3: {df3, posting_dict3}}
+        document_list: list, each element contains a Document instance 
+        total_sum: the total number of all the words
+    Returns:
+        ret_result: list, contains top three high similarity score results.
+    '''
+    ret_result = []
     for query in processed_query:
         candidate_list = []
         for term in query:
             for k,v in inverted_file[term].posting_dict.items():
                 if k not in candidate_list:
                     candidate_list.append(k)
-        document_weight_vector = compute_weight_by_tfidf(query,
-                                                         inverted_file,
-                                                         document_list,
-                                                         candidate_list,
-                                                         total_sum)
-        cosine_similarity = compute_cosine_similarity(query, document_weight_vector)
+        document_weight_vector = compute_weight_by_tfidf(query, inverted_file, document_list, candidate_list, total_sum)
+
+        query_result_list = compute_all_similarity_result(query, document_weight_vector, candidate_list)
+        query_result_list = sorted(query_result_list, key=lambda x: x.similarity_score, reverse=True)
+        '''
+        for item in query_result_list:
+            print(item.query)
+            print(item.DID)
+            print(item.similarity_score)
+            print('-----')
+        '''
+        ret_result.append(query_result_list[:3])
+    return ret_result
 
 
 def compute_weight_by_tfidf(query, inverted_file, document_list, candidate_list, total_sum):
+    '''
+    Compute the tfidf value for every candidates in every query. The weight of each query word is 
+    represented by weight = (tf / total_tf) * log(N / df + 1)
+    Args:
+        query: list, a list of query words
+        inverted_file: list, used to compute df
+        document_list: list, used to compute tf
+        candidate_list: list, contains all the retrieved document ID in one query
+        total_sum: int, used to compute tfidf
+    Returns:
+        document_weight_vector: list, each element is a list of float, 
+                                representing a document vector for this candidate
+    '''
     document_weight_vector = []
-    for term in query:
-        for candidate in candidate_list:
-            if term in 
-            idf = 0
-
+    for candidate in candidate_list:
+        single_weight_vector = []
+        for term in query:
+            tf = 0
+            if term in document_list[candidate].word_bag:
+                tf = len(document_list[candidate].word_bag[term])
+            df = len(inverted_file[term].posting_dict)
+            tfidf = (tf / total_sum) * math.log(len(document_list) / df+1)
+            single_weight_vector.append(tfidf)
+        document_weight_vector.append(single_weight_vector)
     return document_weight_vector
 
 
-def compute_cosine_similarity(query, document_weight_vector):
-    query_weight = []
-    for i in range(query):
-        query_weight.append(1)
+def compute_all_similarity_result(query, document_weight_vector, candidate_list):
+    '''
+    Compute the cosine similarity between the query and document. 
+    Compute all the results, create a QueryResult instance for each result, and store them in query_result_list.
+    Args: 
+        query: list, a list of query words
+        document_weight_vector: list, each element is a list of float, 
+                                representing a document vector for this candidate
+        candidate_list: list, contains all the retrieved document ID in one query
+    Returns:
+        query_result_list: list, each element is an uncompleted QueryResult instance
+    '''
+    query_result_list = []
+    for _index, weight_vector in enumerate(document_weight_vector):
+        query_weight = []
+        for i in range(len(query)):
+            query_weight.append(1)
+        d_times_q = sum(weight_vector)
+        mag_d = 0
+        for num in weight_vector:
+            mag_d += num ** 2
+        mag_d = math.sqrt(mag_d)
+        mag_q = math.sqrt(len(query))
+        cosine_score = d_times_q/(mag_d * mag_q)
+        query_result = QueryResult(query, candidate_list[_index-1])
+        query_result.similarity_score = cosine_score
+        query_result.magnitude = mag_d
+        query_result_list.append(query_result)
+        '''
+        print(query)
+        print(weight_vector)
+        print(d_times_q)
+        print(mag_d)
+        print(mag_q)
+        print(cosine_score)
+        print('-----')
+        '''
+    return query_result_list
 
+
+def complete_result(retrieve_results, document_list, inverted_file):
+    final_result = []
+    for query_result in retrieve_results:
+        for _index, single_result in enumerate(query_result):
+            single_result.rank = _index
+            single_result.keyword_dict = compute_top5_keyword(single_result.DID, document_list, inverted_file)
+            single_result.unique_keyword_num = compute_unique_num(single_result.DID, document_list, inverted_file)
+            final_result.append(single_result)
+    return final_result
+
+
+def compute_top5_keyword(DID, document_list, inverted_file):
+    ret_result = []
+    return dict(ret_result[:5])
+
+
+def compute_unique_num(DID, document_list, inverted_file):
+    unique_num = 0
+    return unique_num
 
 
 if __name__ == "__main__":
@@ -216,4 +304,13 @@ if __name__ == "__main__":
 
     inverted_file = generate_inverted_file(document_list)
 
-    query_retrieve(processed_query, inverted_file, document_list, total_sum)
+    retrieve_results = query_retrieve(processed_query, inverted_file, document_list, total_sum)
+
+    for result in retrieve_results:
+        for item in result:
+            item.show()
+
+    #final_result = complete_result(retrieve_results, document_list, inverted_file)
+    #for result in final_result:
+    #    result.show()
+
