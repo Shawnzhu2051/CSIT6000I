@@ -17,6 +17,9 @@ class Document(object):
         self.DID = DID
         self.word_bag = word_bag
 
+    def show(self):
+        print(self.word_bag)
+
 
 class IndexTermPosting(object):
     '''
@@ -27,6 +30,13 @@ class IndexTermPosting(object):
     def __init__(self, df):
         self.df = df
         self.posting_dict = {}
+
+    def show_df(self):
+        print('df: ' + str(self.df))
+
+    def show_posting_dict(self):
+        for k,v in self.posting_dict.items():
+            print(str(k) + ' -> ' + str(v))
 
 
 class QueryResult(object):
@@ -96,6 +106,7 @@ def preprocess(raw_data):
     # nltk.download('stopwords')  # if you use nltk.stopwords first time, you need to download it first
     stop_words = stopwords.words('english')
     for sentence in raw_data:
+        sentence = sentence.lower()
         punctuation = '[,.!\'\"/+()-]'
         updated_sentence = re.sub(punctuation, ' ', sentence)
         updated_sentence = updated_sentence.split()
@@ -224,9 +235,9 @@ def compute_weight_by_tfidf(query, inverted_file, document_list, candidate_list,
         for term in query:
             tf = 0
             if term in document_list[candidate].word_bag:
-                tf = len(document_list[candidate].word_bag[term])
+                tf = len(document_list[candidate].word_bag[term])/ total_sum
             df = len(inverted_file[term].posting_dict)
-            tfidf = (tf / total_sum) * math.log(len(document_list) / df+1)
+            tfidf = tf * math.log(len(document_list) / df+1)
             single_weight_vector.append(tfidf)
         document_weight_vector.append(single_weight_vector)
     return document_weight_vector
@@ -272,24 +283,39 @@ def compute_all_similarity_result(query, document_weight_vector, candidate_list)
     return query_result_list
 
 
-def complete_result(retrieve_results, document_list, inverted_file):
+def complete_result(retrieve_results, document_list, inverted_file, total_sum):
     final_result = []
     for query_result in retrieve_results:
         for _index, single_result in enumerate(query_result):
-            single_result.rank = _index
-            single_result.keyword_dict = compute_top5_keyword(single_result.DID, document_list, inverted_file)
+            single_result.rank = _index + 1
+            single_result.keyword_dict = compute_top5_keyword(single_result.DID, document_list, inverted_file, total_sum)
             single_result.unique_keyword_num = compute_unique_num(single_result.DID, document_list, inverted_file)
             final_result.append(single_result)
     return final_result
 
 
-def compute_top5_keyword(DID, document_list, inverted_file):
+def compute_top5_keyword(DID, document_list, inverted_file, total_sum):
+    word_dict = {}
     ret_result = []
-    return dict(ret_result[:5])
+    document = document_list[DID]
+    for k,v in document.word_bag.items():
+        tf = len(v) / total_sum
+        idf = math.log(len(document_list)/(len(inverted_file[k].posting_dict)+1))
+        tfidf = tf * idf
+        word_dict[k] = tfidf
+    word_dict = sorted(list(word_dict),key=lambda x: x[0], reverse=True)
+    word_dict = word_dict[:5]
+    for word in word_dict:
+        ret_result.append((word, inverted_file[word].posting_dict))
+    return dict(ret_result)
 
 
 def compute_unique_num(DID, document_list, inverted_file):
     unique_num = 0
+    document = document_list[DID]
+    for word, _ in document.word_bag.items():
+        if len(inverted_file[word].posting_dict) == 1:
+            unique_num += 1
     return unique_num
 
 
@@ -301,16 +327,14 @@ if __name__ == "__main__":
     processed_query, _ = preprocess(query_data)
 
     document_list = generate_word_bag(processed_data)
-
     inverted_file = generate_inverted_file(document_list)
+    #for k, v in inverted_file.items():
+    #    print(k)
+    #    v.show_posting_dict()
 
     retrieve_results = query_retrieve(processed_query, inverted_file, document_list, total_sum)
 
-    for result in retrieve_results:
-        for item in result:
-            item.show()
-
-    #final_result = complete_result(retrieve_results, document_list, inverted_file)
-    #for result in final_result:
-    #    result.show()
+    final_result = complete_result(retrieve_results, document_list, inverted_file, total_sum)
+    for result in final_result:
+        result.show()
 
