@@ -104,6 +104,8 @@ def preprocess(raw_data):
     total_sum = 0
     # nltk.download('stopwords')  # if you use nltk.stopwords first time, you need to download it first
     stop_words = stopwords.words('english')
+    stop_words.append('said')
+    stop_words.append('would')
     for sentence in raw_data:
         sentence = sentence.lower()
         punctuation = '[,.!\'\"/+()-]'
