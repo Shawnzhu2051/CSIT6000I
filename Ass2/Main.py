@@ -8,13 +8,14 @@ class Document(object):
     Basic unit of document
     Attr:
         DID: int, document ID
+        document_word_num: int, the total number in this document
         word_bag: dictionary, contains the words and a list of its position in document
         e.g. {'computer': [1,3]
               'milk': [7]}
     '''
-    def __init__(self, DID, total_word_num, word_bag):
+    def __init__(self, DID, document_word_num, word_bag):
         self.DID = DID
-        self.total_word_num = total_word_num
+        self.document_word_num = document_word_num
         self.word_bag = word_bag
 
     def show(self):
@@ -25,14 +26,15 @@ class IndexTermPosting(object):
     '''
     Contains the df and its posting list of a single word index_term.
     Attr:
-        df: int, the number of this word index_term in a single document
+        total_num: int, the number of this word index_term in a single document
     '''
     def __init__(self, total_num):
         self.total_num = total_num
         self.idf = 0
         self.posting_dict = {}
+        self.tfidf_list = []
 
-    def show_df(self):
+    def show_total_num(self):
         print('df: ' + str(self.total_num))
 
     def show_posting_dict(self):
@@ -59,7 +61,7 @@ class QueryResult(object):
     def show(self):
         print('For query: ')
         print(self.query)
-        print('The top ' + str(self.rank) + ' result is: ')
+        print('The top ' + str(self.rank + 1) + ' result is: ')
         print('DID: ' + str(self.DID))
         for k,v in self.keyword_dict.items():
             print(str(k) + ' -> ' + str(v))
@@ -133,6 +135,7 @@ def generate_word_bag(processed_data):
         processed_data: list, each line contains one processed document
     Returns: 
         ret_document_list: list, each line contains a Document instance
+        total_document_num: int, the total word number inside the document
     '''
     ret_document_list = []
     for _index_in_line, line in enumerate(processed_data):
@@ -169,14 +172,20 @@ def generate_inverted_file(document_list, total_document_num):
                 index_term_posting = IndexTermPosting(len(word[1]))
                 inverted_file[word[0]] = index_term_posting
             else:
-                inverted_file[word[0]].df += len(word[1])
+                inverted_file[word[0]].total_num += len(word[1])
             inverted_file[word[0]].posting_dict[document.DID] = word[1]
     for k, v in inverted_file.items():
         v.idf = math.log(total_document_num/(len(v.posting_dict)+1))
-    return inverted_file
+        for _index, document in enumerate(document_list):
+            if _index in v.posting_dict:
+                tf = len(v.posting_dict[_index]) / document.document_word_num
+            else:
+                tf = 0
+            v.tfidf_list.append(tf * v.idf)
+    return inverted_file, len(inverted_file)
 
 
-def query_retrieve(processed_query, inverted_file, document_list, total_sum):
+def query_retrieve(processed_query, inverted_file, total_word_num):
     '''
     Do the retrieve function.
     Args:
@@ -184,8 +193,7 @@ def query_retrieve(processed_query, inverted_file, document_list, total_sum):
         inverted_file: list, {index_item1: {df1, posting_dict1}
                             index_item2: {df2, posting_dict2}
                             index_item3: {df3, posting_dict3}}
-        document_list: list, each element contains a Document instance 
-        total_sum: the total number of all the words
+        total_word_num: the total number of the different words
     Returns:
         ret_result: list, contains top three high similarity score results.
     '''
@@ -196,23 +204,22 @@ def query_retrieve(processed_query, inverted_file, document_list, total_sum):
             for k,v in inverted_file[term].posting_dict.items():
                 if k not in candidate_list:
                     candidate_list.append(k)
-        document_weight_vector = compute_weight_by_tfidf(query, inverted_file, document_list, candidate_list, total_sum)
-        query_result_list = compute_all_similarity_result(query, document_weight_vector, candidate_list)
+        document_weight_vector = compute_document_weight(inverted_file, candidate_list)
+        query_result_list = compute_similarity_result(query, document_weight_vector, candidate_list)
         query_result_list = sorted(query_result_list, key=lambda x: x.similarity_score, reverse=True)
+        for _index in range(3):
+            query_result_list[_index].rank = _index
         ret_result.append(query_result_list[:3])
     return ret_result
 
 
-def compute_weight_by_tfidf(query, inverted_file, document_list, candidate_list, total_sum):
+def compute_document_weight(inverted_file, candidate_list):
     '''
     Compute the tfidf value for every candidates in every query. The weight of each query word is 
     represented by weight = (tf / total_tf) * log(N / df + 1)
     Args:
-        query: list, a list of query words
         inverted_file: list, used to compute df
-        document_list: list, used to compute tf
         candidate_list: list, contains all the retrieved document ID in one query
-        total_sum: int, used to compute tfidf
     Returns:
         document_weight_vector: list, each element is a list of float, 
                                 representing a document vector for this candidate
@@ -220,18 +227,13 @@ def compute_weight_by_tfidf(query, inverted_file, document_list, candidate_list,
     document_weight_vector = []
     for candidate in candidate_list:
         single_weight_vector = []
-        for term in query:
-            tf = 0
-            if term in document_list[candidate].word_bag:
-                tf = len(document_list[candidate].word_bag[term])/ total_sum
-            df = len(inverted_file[term].posting_dict)
-            tfidf = tf * math.log(len(document_list) / df+1)
-            single_weight_vector.append(tfidf)
+        for word in inverted_file:
+            single_weight_vector.append(inverted_file[word].tfidf_list[candidate])
         document_weight_vector.append(single_weight_vector)
     return document_weight_vector
 
 
-def compute_all_similarity_result(query, document_weight_vector, candidate_list):
+def compute_similarity_result(query, document_weight_vector, candidate_list):
     '''
     Compute the cosine similarity between the query and document. 
     Compute all the results, create a QueryResult instance for each result, and store them in query_result_list.
@@ -244,66 +246,50 @@ def compute_all_similarity_result(query, document_weight_vector, candidate_list)
         query_result_list: list, each element is an uncompleted QueryResult instance
     '''
     query_result_list = []
-    for _index, weight_vector in enumerate(document_weight_vector):
-        query_weight = [1] * len(query)
-        d_times_q = sum(weight_vector)
+    query_vector = []
+    for word in inverted_file:
+        if word in query:
+            query_vector.append(1)
+        else:
+            query_vector.append(0)
+
+    for _index1, weight_vector in enumerate(document_weight_vector):
+        d_times_q = 0
+        for _index2 in range(len(query_vector)):
+            d_times_q += query_vector[_index2] * weight_vector[_index2]
+        mag_q = math.sqrt(sum(query_vector))
         mag_d = 0
         for num in weight_vector:
             mag_d += num ** 2
         mag_d = math.sqrt(mag_d)
-        # mag_q = math.sqrt(len(query))
-        cosine_score = d_times_q  # /(mag_d * mag_q)
-        query_result = QueryResult(query, candidate_list[_index])
-        query_result.similarity_score = cosine_score
+        cosine_score = d_times_q /(mag_d * mag_q)
+        query_result = QueryResult(query, candidate_list[_index1])
         query_result.magnitude = mag_d
+        query_result.similarity_score = cosine_score
+        query_result.keyword_dict = compute_top5_keyword(candidate_list[_index1], document_list, inverted_file)
+        query_result.unique_keyword_num = compute_unique_num(candidate_list[_index1], document_list, inverted_file)
         query_result_list.append(query_result)
     return query_result_list
 
 
-def complete_result(retrieve_results, document_list, inverted_file, total_sum):
-    '''
-    Complete the result. Since the QueryResult instance still have several term uncompleted.
-    The five highest weighted keywords of the document and the posting lists is computed in compute_top5_keyword.
-    The number of unique keywords in the document is computed in compute_unique_num.
-    Args: 
-        retrieve_results: list, contains top three high similarity score results.
-        document_list: list, each element contains a Document instance 
-        inverted_file: list, used to compute tfidf for indexing the key words
-        total_sum: int, used to compute tfidf
-    Returns:
-        final_result: list, a list of completed QueryResult instance
-    '''
-    final_result = []
-    for query_result in retrieve_results:
-        for _index, single_result in enumerate(query_result):
-            single_result.rank = _index + 1
-            single_result.keyword_dict = compute_top5_keyword(single_result.DID, document_list, inverted_file, total_sum)
-            single_result.unique_keyword_num = compute_unique_num(single_result.DID, document_list, inverted_file)
-            final_result.append(single_result)
-    return final_result
-
-
-def compute_top5_keyword(DID, document_list, inverted_file, total_sum):
+def compute_top5_keyword(DID, document_list, inverted_file):
     '''
     Compute the top 5 keyword in one document based on the tfidf value
     Args: 
         DID: int, document ID
         document_list: list, used to compute tf
         inverted_file: list, used to compute df
-        total_sum: int, used to compute tfidf
     Returns:
         ret_result: list, contains top 5 keyword and its posting list
     '''
+
     word_dict = {}
     ret_result = []
     document = document_list[DID]
-    for k,v in document.word_bag.items():
-        tf = len(v) / total_sum
-        idf = math.log(len(document_list)/(len(inverted_file[k].posting_dict)+1))
-        tfidf = tf * idf
-        word_dict[k] = tfidf
-    word_dict = sorted(list(word_dict),key=lambda x: x[0], reverse=True)
-    word_dict = word_dict[:5]
+    for k, v in document.word_bag.items():
+        word_dict[k] = inverted_file[k].tfidf_list[DID]
+    word_dict = dict(sorted(word_dict.items(),key=lambda x: x[1], reverse=True))
+    word_dict = list(word_dict)[:5]
     for word in word_dict:
         ret_result.append((word, inverted_file[word].posting_dict))
     return dict(ret_result)
@@ -328,6 +314,7 @@ def compute_unique_num(DID, document_list, inverted_file):
 
 
 if __name__ == "__main__":
+
     collection_data = read_data('collection-100.txt')
     query_data = read_data('query-10.txt')
 
@@ -335,11 +322,11 @@ if __name__ == "__main__":
     processed_query, _ = preprocess(query_data)
 
     document_list, total_document_num = generate_word_bag(processed_data)
-    inverted_file = generate_inverted_file(document_list, total_document_num)
+    inverted_file, total_word_num = generate_inverted_file(document_list, total_document_num)
 
-    #retrieve_results = query_retrieve(processed_query, inverted_file, document_list, total_sum)
+    retrieve_results = query_retrieve(processed_query, inverted_file, total_word_num)
 
-    #final_result = complete_result(retrieve_results, document_list, inverted_file, total_sum)
-    #for result in final_result:
-    #    result.show()
+    for result in retrieve_results:
+        for item in result:
+            item.show()
 
