@@ -12,8 +12,9 @@ class Document(object):
         e.g. {'computer': [1,3]
               'milk': [7]}
     '''
-    def __init__(self, DID, word_bag):
+    def __init__(self, DID, total_word_num, word_bag):
         self.DID = DID
+        self.total_word_num = total_word_num
         self.word_bag = word_bag
 
     def show(self):
@@ -26,12 +27,13 @@ class IndexTermPosting(object):
     Attr:
         df: int, the number of this word index_term in a single document
     '''
-    def __init__(self, df):
-        self.df = df
+    def __init__(self, total_num):
+        self.total_num = total_num
+        self.idf = 0
         self.posting_dict = {}
 
     def show_df(self):
-        print('df: ' + str(self.df))
+        print('df: ' + str(self.total_num))
 
     def show_posting_dict(self):
         for k,v in self.posting_dict.items():
@@ -141,12 +143,13 @@ def generate_word_bag(processed_data):
                 word_bag[word].append(_index_in_word)
             else:
                 word_bag[word].append(_index_in_word)
-        document = Document(_index_in_line, word_bag)
+        document = Document(_index_in_line, len(line), word_bag)
         ret_document_list.append(document)
-    return ret_document_list
+    total_document_num = len(ret_document_list)
+    return ret_document_list, total_document_num
 
 
-def generate_inverted_file(document_list):
+def generate_inverted_file(document_list, total_document_num):
     '''
     generate the inverted file according to the document list. 
     The structure of inverted_file is:
@@ -168,6 +171,8 @@ def generate_inverted_file(document_list):
             else:
                 inverted_file[word[0]].df += len(word[1])
             inverted_file[word[0]].posting_dict[document.DID] = word[1]
+    for k, v in inverted_file.items():
+        v.idf = math.log(total_document_num/(len(v.posting_dict)+1))
     return inverted_file
 
 
@@ -240,9 +245,7 @@ def compute_all_similarity_result(query, document_weight_vector, candidate_list)
     '''
     query_result_list = []
     for _index, weight_vector in enumerate(document_weight_vector):
-        query_weight = []
-        for i in range(len(query)):
-            query_weight.append(1)
+        query_weight = [1] * len(query)
         d_times_q = sum(weight_vector)
         mag_d = 0
         for num in weight_vector:
@@ -331,12 +334,12 @@ if __name__ == "__main__":
     processed_data, total_sum = preprocess(collection_data)
     processed_query, _ = preprocess(query_data)
 
-    document_list = generate_word_bag(processed_data)
-    inverted_file = generate_inverted_file(document_list)
+    document_list, total_document_num = generate_word_bag(processed_data)
+    inverted_file = generate_inverted_file(document_list, total_document_num)
 
-    retrieve_results = query_retrieve(processed_query, inverted_file, document_list, total_sum)
+    #retrieve_results = query_retrieve(processed_query, inverted_file, document_list, total_sum)
 
-    final_result = complete_result(retrieve_results, document_list, inverted_file, total_sum)
-    for result in final_result:
-        result.show()
+    #final_result = complete_result(retrieve_results, document_list, inverted_file, total_sum)
+    #for result in final_result:
+    #    result.show()
 
