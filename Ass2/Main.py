@@ -27,15 +27,16 @@ class IndexTermPosting(object):
     Contains the df and its posting list of a single word index_term.
     Attr:
         total_num: int, the number of this word index_term in a single document
+        idf: int, the idf value of this word.
+        posting_dict: dictionary, records the document and its positons which contain the current word.
+        tfidf_list: list, records the individual tf-idf value for each document about the current word.
+
     '''
     def __init__(self, total_num):
         self.total_num = total_num
         self.idf = 0
         self.posting_dict = {}
         self.tfidf_list = []
-
-    def show_total_num(self):
-        print('df: ' + str(self.total_num))
 
     def show_posting_dict(self):
         for k,v in self.posting_dict.items():
@@ -47,7 +48,12 @@ class QueryResult(object):
     Store the query retrieve result. One QueryResult store one document result.
     Attr:
         query: list, the query sentence which contains several query words
-        DID: int, indicate the corresponding DID
+        DID: int, indicates the corresponding DID
+        rank: int, indicates the rank of this result (range from 1 to 3)
+        keyword_dict: dictionary, the top 5 most important keyword in this document.
+        unique_keyword_num: int, the number of keyword which only appear in this document
+        magnitude: float, the magnitude of document vector in vector space
+        similarity_score: float: the cosine similarity score between document and query
     '''
     def __init__(self, query, DID):
         self.query = query
@@ -56,7 +62,7 @@ class QueryResult(object):
         self.keyword_dict = {}
         self.unique_keyword_num = 0
         self.magnitude = 0
-        self.similarity_score = []
+        self.similarity_score = 0
 
     def show(self):
         print('For query: ')
@@ -156,10 +162,9 @@ def generate_inverted_file(document_list, total_document_num):
     '''
     generate the inverted file according to the document list. 
     The structure of inverted_file is:
-        {index_item1: {df1, posting_dict1}
-         index_item2: {df2, posting_dict2}
-         index_item3: {df3, posting_dict3}}
-    e.g. {'computer': {3, {0:[2,8], 5:[1]}}}
+        {index_item1: IndexTermPosting1
+         index_item2: IndexTermPosting2
+         index_item3: IndexTermPosting3}
     Args:
         document_list: list, each line contains a Document instance 
         total_document_num: int, the total number of words in all documents.
