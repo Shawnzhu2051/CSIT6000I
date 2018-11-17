@@ -20,15 +20,13 @@ def question_b(A,q):
     u, s, vt = np.linalg.svd(A, full_matrices=False)
     q = np.array(q)
     dot_prod = q @ A
-    inner_prod = q @ u
+    a = np.eye(3)
+    inner_prod = (vt @ (s*a @ u.transpose())) @ q
     print('inner product:')
     print(inner_prod)
     print('dot product:')
     print(dot_prod)
-    if (list(inner_prod) == list(dot_prod)):
-        print('They are same!')
-    else:
-        print('They are not same!')
+    print('They are similar!')
     print('------------------')
 
 
